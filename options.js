@@ -1,5 +1,13 @@
 // Default rules for common tracking parameters
 const DEFAULT_RULES = [
+    { pattern: "utm_.*", replacement: "" },
+    { pattern: "fbclid", replacement: "" },
+    { pattern: "gclid", replacement: "" },
+    { pattern: "msclkid", replacement: "" },
+    { pattern: "mc_eid", replacement: "" },
+    { pattern: "ref_.*", replacement: "" },
+    { pattern: "source", replacement: "" },
+    { pattern: "campaign", replacement: "" },
     { pattern: "forcedownload", replacement: "" },
     { pattern: "download", replacement: "" },
 ];
@@ -229,6 +237,12 @@ function toggleBadge() {
         () => {
             const status = settings.showBadge ? "enabled" : "disabled";
             showToast(`Badge ${status}`, "success");
+
+            // Send message to background script to update badge immediately
+            chrome.runtime.sendMessage({
+                action: "updateBadge",
+                showBadge: settings.showBadge,
+            });
         }
     );
 }
@@ -277,11 +291,6 @@ document.addEventListener("DOMContentLoaded", function () {
         .getElementById("clearAll")
         .addEventListener("click", clearAllRules);
     document.getElementById("save").addEventListener("click", saveRules);
-
-    // Notification toggle event listener
-    document
-        .getElementById("notifications-toggle")
-        .addEventListener("click", toggleNotifications);
 
     // Badge toggle event listener
     document

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>CleanURLs Test Page</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                padding: 20px;
+            }
+            .test-link {
+                display: block;
+                margin: 10px 0;
+                padding: 10px;
+                background: #f0f0f0;
+            }
+            .results {
+                margin-top: 20px;
+                padding: 15px;
+                background: #e8f4f8;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>CleanURLs Extension Test Page</h1>
+        <p>
+            This page contains links with tracking parameters to test the
+            CleanURLs extension.
+        </p>
+
+        <h2>Test Links:</h2>
+        <a
+            href="https://example.com?utm_source=test&utm_medium=email&utm_campaign=newsletter"
+            class="test-link"
+        >
+            Link with UTM parameters
+        </a>
+
+        <a
+            href="https://example.com?fbclid=123456789&ref_source=facebook"
+            class="test-link"
+        >
+            Link with Facebook tracking
+        </a>
+
+        <a
+            href="https://example.com?gclid=abcdef123&source=google"
+            class="test-link"
+        >
+            Link with Google tracking
+        </a>
+
+        <a
+            href="https://example.com?msclkid=xyz789&campaign=bing"
+            class="test-link"
+        >
+            Link with Microsoft tracking
+        </a>
+
+        <div class="results">
+            <h3>Instructions:</h3>
+            <ol>
+                <li>Install the CleanURLs extension</li>
+                <li>Open this page</li>
+                <li><strong>Open DevTools (F12) → Console tab</strong></li>
+                <li>Reload this page to see CleanURLs debug messages</li>
+                <li>Right-click on any link and "Copy link address"</li>
+                <li>Check if tracking parameters are removed</li>
+                <li>Open the extension popup to see cleaned links counter</li>
+            </ol>
+
+            <h3>Debug Info:</h3>
+            <p>
+                Check the browser console for CleanURLs debug messages that will
+                show:
+            </p>
+            <ul>
+                <li>✅ Rules loaded from storage</li>
+                <li>✅ Links found and processed</li>
+                <li>✅ Parameters removed</li>
+                <li>❌ Any errors encountered</li>
+            </ul>
+        </div>
+
+        <script>
+            // Add some dynamic links to test the mutation observer
+            function addDynamicLink() {
+                const container = document.body;
+                const link = document.createElement("a");
+                link.href =
+                    "https://example.com?utm_source=dynamic&mc_eid=12345";
+                link.textContent = "Dynamically added link with tracking";
+                link.className = "test-link";
+                container.appendChild(link);
+            }
+
+            // Add a dynamic link after 2 seconds
+            setTimeout(addDynamicLink, 2000);
+        </script>
+    </body>
+</html>

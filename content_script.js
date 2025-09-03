@@ -1,15 +1,5 @@
 /**
- * CleanURLs     async init() {
-        try {
-            await this.loadConfig();
-            await this.handleCurrentLocation();
-            this.cleanAllLinks();
-            this.startObserver();
-            this.isInitialized = true;
-        } catch (error) {
-            // Silent error handling
-        }
-    }pt
+ * CleanURLs Content Script
  * Monitors and cleans URLs on web pages to remove tracking parameters
  */
 
@@ -28,14 +18,46 @@ class URLCleaner {
      */
     async init() {
         try {
+            // Wait a bit for the background script to set up storage
+            await new Promise((resolve) => setTimeout(resolve, 100));
+
             await this.loadConfig();
-            await this.loadSettings();
-            await this.handleCurrentLocation();
+
+            // If no rules loaded, request them from background script
+            if (this.configRules.length === 0) {
+                await this.requestRulesFromBackground();
+            }
+
+            // Mark as initialized FIRST
+            this.isInitialized = true;
+
+            // Now clean existing links and start observing
+            this.handleCurrentLocation(); // Non-blocking
             this.cleanAllLinks();
             this.startObserver();
-            this.isInitialized = true;
         } catch (error) {
-            // Silent error handling - no console logs
+            // If initialization fails, try again after a delay
+            setTimeout(() => this.init(), 1000);
+        }
+    }
+
+    /**
+     * Request rules from background script
+     */
+    async requestRulesFromBackground() {
+        try {
+            const response = await chrome.runtime.sendMessage({
+                action: "getRules",
+            });
+            if (response && response.rules && response.rules.length > 0) {
+                this.configRules = response.rules.map((rule) => ({
+                    pattern: new RegExp(rule.pattern, "i"),
+                    replacement: rule.replacement || "",
+                    originalPattern: rule.pattern,
+                }));
+            }
+        } catch (error) {
+            // Silent error handling
         }
     }
 
@@ -45,11 +67,56 @@ class URLCleaner {
     loadConfig() {
         return new Promise((resolve) => {
             chrome.storage.sync.get({ rules: [] }, (data) => {
-                this.configRules = data.rules.map((rule) => ({
-                    pattern: new RegExp(rule.pattern, "i"),
-                    replacement: rule.replacement || "",
-                    originalPattern: rule.pattern,
-                }));
+                try {
+                    let rules = data.rules;
+
+                    // If no rules loaded, use basic defaults
+                    if (!rules || rules.length === 0) {
+                        rules = [
+                            { pattern: "utm_.*", replacement: "" },
+                            { pattern: "fbclid", replacement: "" },
+                            { pattern: "gclid", replacement: "" },
+                            { pattern: "ref", replacement: "" },
+                            { pattern: "forcedownload", replacement: "" },
+                            { pattern: "download", replacement: "" },
+                        ];
+                    }
+
+                    this.configRules = rules.map((rule) => ({
+                        pattern: new RegExp(rule.pattern, "i"),
+                        replacement: rule.replacement || "",
+                        originalPattern: rule.pattern,
+                    }));
+                } catch (error) {
+                    // Fallback to basic rules if mapping fails
+                    this.configRules = [
+                        {
+                            pattern: /utm_.*/i,
+                            replacement: "",
+                            originalPattern: "utm_.*",
+                        },
+                        {
+                            pattern: /fbclid/i,
+                            replacement: "",
+                            originalPattern: "fbclid",
+                        },
+                        {
+                            pattern: /gclid/i,
+                            replacement: "",
+                            originalPattern: "gclid",
+                        },
+                        {
+                            pattern: /forcedownload/i,
+                            replacement: "",
+                            originalPattern: "forcedownload",
+                        },
+                        {
+                            pattern: /download/i,
+                            replacement: "",
+                            originalPattern: "download",
+                        },
+                    ];
+                }
                 resolve();
             });
         });
@@ -128,20 +195,18 @@ class URLCleaner {
 
         if (cleanedCount > 0) {
             this.cleanedLinksCount += cleanedCount;
+            // Update badge with total cleaned links count
+            this.updateBadge();
         }
     }
 
     /**
-     * Handle the current page location
+     * Handle the current page location (currently disabled)
      */
     async handleCurrentLocation() {
-        if (!location.href) return;
-
-        const cleanedUrl = this.cleanUrlString(location.href);
-        if (cleanedUrl !== location.href) {
-            // Use replace to avoid adding to browser history
-            location.replace(cleanedUrl);
-        }
+        // Temporarily disabled to avoid page redirect issues
+        // This feature can be re-enabled later with proper user consent
+        return;
     }
 
     /**
@@ -178,15 +243,20 @@ class URLCleaner {
                         }
                     }
                 }
+
+                // Also handle attribute changes on existing links
+                if (
+                    mutation.type === "attributes" &&
+                    mutation.attributeName === "href" &&
+                    mutation.target.matches("a[href]")
+                ) {
+                    this.cleanSingleLink(mutation.target);
+                }
             }
 
-            // Also handle attribute changes on existing links
-            if (
-                mutation.type === "attributes" &&
-                mutation.attributeName === "href" &&
-                mutation.target.matches("a[href]")
-            ) {
-                this.cleanSingleLink(mutation.target);
+            if (hasNewLinks) {
+                // Update badge after processing new links
+                this.updateBadge();
             }
         });
 
@@ -202,6 +272,8 @@ class URLCleaner {
      * Clean a single link element
      */
     cleanSingleLink(anchor) {
+        if (!this.isInitialized) return;
+
         const originalHref = anchor.getAttribute("href");
         if (!originalHref) return;
 
@@ -209,7 +281,31 @@ class URLCleaner {
         if (cleanedHref !== originalHref) {
             anchor.setAttribute("href", cleanedHref);
             this.cleanedLinksCount++;
+            // Update badge with new total
+            this.updateBadge();
         }
+    }
+
+    /**
+     * Update extension badge with cleaned links count
+     */
+    updateBadge() {
+        try {
+            chrome.runtime.sendMessage({
+                action: "updateBadgeCount",
+                count: this.cleanedLinksCount,
+            });
+        } catch (error) {
+            // Silent error handling
+        }
+    }
+
+    /**
+     * Reset cleaned links counter
+     */
+    resetCounter() {
+        this.cleanedLinksCount = 0;
+        this.updateBadge();
     }
 
     /**
@@ -246,8 +342,15 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     switch (request.action) {
+        case "ping":
+            sendResponse({ pong: true });
+            break;
         case "reloadConfig":
             urlCleaner.reloadConfig();
+            sendResponse({ success: true });
+            break;
+        case "resetCounter":
+            urlCleaner.resetCounter();
             sendResponse({ success: true });
             break;
         case "getStats":

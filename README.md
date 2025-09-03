@@ -115,7 +115,24 @@ If you encounter any issues or have suggestions for improvements:
 
 ## 📊 Changelog
 
-### v1.2.0 (Latest)
+### v1.3.1 (Latest)
+
+-   🔄 **NEW**: Badge counter now updates when switching between tabs
+-   📊 Added per-tab badge counting system
+-   🎯 Badge shows cleaned links count specific to the current active tab
+-   🔧 Added "tabs" permission for proper tab event handling
+-   ⚡ Improved badge responsiveness and user experience
+
+### v1.3.0
+
+-   🎯 **NEW**: Badge now shows cleaned links count instead of rules count
+-   🧹 Removed all debug console logging for production release
+-   🔧 Fixed initialization timing issues with link cleaning
+-   ⚡ Improved performance and reliability
+-   🎨 Enhanced user experience with real-time badge updates
+-   🔄 Added proper error handling and fallbacks
+
+### v1.2.0
 
 -   Added badge counter toggle option
 -   Implemented minimalistic dark/light mode styling

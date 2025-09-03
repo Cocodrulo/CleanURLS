@@ -5,12 +5,22 @@
 
 // Default rules for common tracking parameters
 const DEFAULT_RULES = [
+    { pattern: "utm_.*", replacement: "" },
+    { pattern: "fbclid", replacement: "" },
+    { pattern: "gclid", replacement: "" },
+    { pattern: "msclkid", replacement: "" },
+    { pattern: "mc_eid", replacement: "" },
+    { pattern: "ref_.*", replacement: "" },
+    { pattern: "source", replacement: "" },
+    { pattern: "campaign", replacement: "" },
     { pattern: "forcedownload", replacement: "" },
     { pattern: "download", replacement: "" },
 ];
 
 class CleanURLsBackground {
     constructor() {
+        this.tabCleanedLinks = new Map(); // Track cleaned links per tab ID
+        this.currentActiveTabId = null; // Track the currently active tab
         this.initializeExtension();
         this.setupEventListeners();
     }
@@ -28,17 +38,50 @@ class CleanURLsBackground {
                     showBadge: true,
                 });
 
-            // Set default rules on first install
-            if (isFirstInstall && rules.length === 0) {
+            // Always ensure we have rules - set defaults if none exist
+            if (rules.length === 0) {
                 await chrome.storage.sync.set({
                     rules: DEFAULT_RULES,
                     isFirstInstall: false,
                     showBadge: true,
                 });
+                // Update badge with 0 cleaned links initially
+                this.updateBadge(0, showBadge);
+            } else {
+                // Update badge with 0 cleaned links initially
+                this.updateBadge(0, showBadge);
             }
 
-            // Update badge with rule count
-            this.updateBadge(rules.length, showBadge);
+            // Initialize current active tab
+            await this.initializeActiveTab();
+        } catch (error) {
+            // Fallback: set default rules if anything fails
+            try {
+                await chrome.storage.sync.set({
+                    rules: DEFAULT_RULES,
+                    isFirstInstall: false,
+                    showBadge: true,
+                });
+                this.updateBadge(0, true);
+                await this.initializeActiveTab();
+            } catch (fallbackError) {
+                // Silent error handling
+            }
+        }
+    }
+
+    /**
+     * Initialize the current active tab
+     */
+    async initializeActiveTab() {
+        try {
+            const [activeTab] = await chrome.tabs.query({
+                active: true,
+                currentWindow: true,
+            });
+            if (activeTab) {
+                this.currentActiveTabId = activeTab.id;
+            }
         } catch (error) {
             // Silent error handling
         }
@@ -61,6 +104,16 @@ class CleanURLsBackground {
         // Handle tab updates
         chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
             this.handleTabUpdate(tabId, changeInfo, tab);
+        });
+
+        // Handle tab activation (switching tabs)
+        chrome.tabs.onActivated.addListener((activeInfo) => {
+            this.handleTabActivated(activeInfo);
+        });
+
+        // Handle tab removal
+        chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
+            this.handleTabRemoved(tabId);
         });
 
         // Handle messages from content scripts
@@ -95,11 +148,20 @@ class CleanURLsBackground {
      * Handle storage changes
      */
     async handleStorageChange(changes, namespace) {
-        if (namespace === "sync" && (changes.rules || changes.showBadge)) {
-            const newRules = changes.rules?.newValue || [];
-            const showBadge = changes.showBadge?.newValue ?? true;
+        if (namespace === "sync") {
+            // Get current state from storage to ensure we have the latest values
+            const { rules, showBadge } = await chrome.storage.sync.get({
+                rules: [],
+                showBadge: true,
+            });
 
-            this.updateBadge(newRules.length, showBadge);
+            // Always update badge when storage changes
+            if (changes.rules || changes.showBadge) {
+                const currentTabCount = this.currentActiveTabId
+                    ? this.tabCleanedLinks.get(this.currentActiveTabId) || 0
+                    : 0;
+                this.updateBadge(currentTabCount, showBadge);
+            }
 
             // Notify all content scripts about rule changes
             if (changes.rules) {
@@ -163,6 +225,29 @@ class CleanURLsBackground {
     }
 
     /**
+     * Handle tab activation (when switching tabs)
+     */
+    async handleTabActivated(activeInfo) {
+        this.currentActiveTabId = activeInfo.tabId;
+
+        // Update badge for the newly active tab
+        const { showBadge } = await chrome.storage.sync.get({
+            showBadge: true,
+        });
+        const cleanedLinksCount =
+            this.tabCleanedLinks.get(activeInfo.tabId) || 0;
+        this.updateBadge(cleanedLinksCount, showBadge);
+    }
+
+    /**
+     * Handle tab removal (cleanup)
+     */
+    handleTabRemoved(tabId) {
+        // Clean up stored data for removed tab
+        this.tabCleanedLinks.delete(tabId);
+    }
+
+    /**
      * Handle messages from content scripts and popup
      */
     async handleMessage(request, sender, sendResponse) {
@@ -187,6 +272,44 @@ class CleanURLsBackground {
                     sendResponse(tabStats);
                     break;
 
+                case "updateBadge":
+                    // Handle immediate badge update from options
+                    const currentTabCount = this.currentActiveTabId
+                        ? this.tabCleanedLinks.get(this.currentActiveTabId) || 0
+                        : 0;
+                    this.updateBadge(currentTabCount, request.showBadge);
+                    sendResponse({ success: true });
+                    break;
+
+                case "updateBadgeCount":
+                    // Handle badge update with cleaned links count per tab
+                    const tabId = sender.tab?.id;
+                    if (tabId) {
+                        this.tabCleanedLinks.set(tabId, request.count || 0);
+
+                        // Only update badge if this is the currently active tab
+                        if (tabId === this.currentActiveTabId) {
+                            const { showBadge: badgeEnabled } =
+                                await chrome.storage.sync.get({
+                                    showBadge: true,
+                                });
+                            this.updateBadge(request.count || 0, badgeEnabled);
+                        }
+                    }
+                    sendResponse({ success: true });
+                    break;
+
+                case "resetCleanedLinks":
+                    // Reset the cleaned links counter for all tabs
+                    this.tabCleanedLinks.clear();
+                    const { showBadge: badgeShow } =
+                        await chrome.storage.sync.get({
+                            showBadge: true,
+                        });
+                    this.updateBadge(0, badgeShow);
+                    sendResponse({ success: true });
+                    break;
+
                 case "resetToDefaults":
                     await chrome.storage.sync.set({ rules: DEFAULT_RULES });
                     sendResponse({ success: true });
@@ -208,17 +331,24 @@ class CleanURLsBackground {
     }
 
     /**
-     * Update extension badge with rule count
+     * Update extension badge with cleaned links count
      */
-    updateBadge(ruleCount, showBadge = true) {
-        if (showBadge) {
-            const text = ruleCount > 0 ? ruleCount.toString() : "";
-            const color = ruleCount > 0 ? "#4CAF50" : "#9E9E9E";
+    updateBadge(cleanedLinksCount, showBadge = true) {
+        try {
+            if (showBadge) {
+                const text =
+                    cleanedLinksCount > 0 ? cleanedLinksCount.toString() : "";
+                const color = cleanedLinksCount > 0 ? "#4CAF50" : "#9E9E9E";
 
-            chrome.action.setBadgeText({ text });
-            chrome.action.setBadgeBackgroundColor({ color });
-        } else {
-            chrome.action.setBadgeText({ text: "" });
+                chrome.action.setBadgeText({ text });
+                chrome.action.setBadgeBackgroundColor({ color });
+            } else {
+                // Clear the badge completely when disabled
+                chrome.action.setBadgeText({ text: "" });
+                chrome.action.setBadgeBackgroundColor({ color: "#9E9E9E" });
+            }
+        } catch (error) {
+            // Silent error handling for badge API issues
         }
     }
 

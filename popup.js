@@ -9,7 +9,7 @@ class PopupController {
         this.stats = {
             rulesCount: 0,
             activeTabs: 0,
-            version: "1.2.0",
+            version: "1.3.1",
         };
         this.currentTabStats = {
             cleanedLinksCount: 0,
@@ -54,18 +54,27 @@ class PopupController {
         return new Promise((resolve) => {
             chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
                 if (tabs[0]?.id) {
-                    chrome.runtime.sendMessage(
-                        {
-                            action: "getCurrentTabStats",
-                            tabId: tabs[0].id,
-                        },
-                        (response) => {
-                            if (response && !response.error) {
-                                this.currentTabStats = response;
+                    // Add a small delay to ensure content script is ready
+                    setTimeout(() => {
+                        chrome.runtime.sendMessage(
+                            {
+                                action: "getCurrentTabStats",
+                                tabId: tabs[0].id,
+                            },
+                            (response) => {
+                                if (response && !response.error) {
+                                    this.currentTabStats = response;
+                                } else {
+                                    // Fallback values
+                                    this.currentTabStats = {
+                                        cleanedLinksCount: 0,
+                                        domain: "unknown",
+                                    };
+                                }
+                                resolve();
                             }
-                            resolve();
-                        }
-                    );
+                        );
+                    }, 100);
                 } else {
                     resolve();
                 }
@@ -126,9 +135,22 @@ class PopupController {
             tabsLabel.textContent = "Cleaned Links";
         }
 
+        // Show domain info if available
+        const domainInfo = document.getElementById("domain-info");
+        if (
+            domainInfo &&
+            this.currentTabStats.domain &&
+            this.currentTabStats.domain !== "unknown"
+        ) {
+            domainInfo.textContent = `on ${this.currentTabStats.domain}`;
+            domainInfo.style.display = "block";
+        } else if (domainInfo) {
+            domainInfo.style.display = "none";
+        }
+
         // Update version
         document.getElementById("version").textContent =
-            this.stats.version || "1.2.0";
+            this.stats.version || "1.3.1";
 
         // Update status
         const statusElement = document.getElementById("status");
