@@ -1,0 +1,117 @@
+name: Build and Release Extension
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        
+    - name: Get version from manifest
+      id: get_version
+      run: |
+        VERSION=$(cat manifest.json | grep '"version"' | sed 's/.*"version": "\(.*\)".*/\1/')
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Version found: $VERSION"
+        
+    - name: Check if tag exists
+      id: check_tag
+      run: |
+        if git rev-parse "v${{ steps.get_version.outputs.version }}" >/dev/null 2>&1; then
+          echo "exists=true" >> $GITHUB_OUTPUT
+          echo "Tag v${{ steps.get_version.outputs.version }} already exists"
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+          echo "Tag v${{ steps.get_version.outputs.version }} does not exist"
+        fi
+        
+    - name: Create extension package
+      if: steps.check_tag.outputs.exists == 'false'
+      run: |
+        # Create build directory
+        mkdir -p build
+        
+        # Copy all necessary files to build directory
+        cp manifest.json build/
+        cp background.js build/
+        cp content_script.js build/
+        cp options.html build/
+        cp options.js build/
+        cp popup.html build/
+        cp popup.js build/
+        cp -r icons build/
+        
+        # Create zip file
+        cd build
+        zip -r ../CleanURLs-v${{ steps.get_version.outputs.version }}.zip .
+        cd ..
+        
+        # Create source code zip (excluding .git and build directories)
+        zip -r CleanURLs-source-v${{ steps.get_version.outputs.version }}.zip . -x "*.git*" "build/*" "test*" "DEBUG*" "simple-test.html"
+        
+        # List created files
+        ls -la *.zip
+        
+    - name: Upload build artifacts
+      if: steps.check_tag.outputs.exists == 'false'
+      uses: actions/upload-artifact@v4
+      with:
+        name: extension-build
+        path: |
+          CleanURLs-v${{ steps.get_version.outputs.version }}.zip
+          CleanURLs-source-v${{ steps.get_version.outputs.version }}.zip
+          
+    - name: Create Release
+      if: steps.check_tag.outputs.exists == 'false'
+      id: create_release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v${{ steps.get_version.outputs.version }}
+        name: CleanURLs v${{ steps.get_version.outputs.version }}
+        body: |
+          🧹 CleanURLs Chrome Extension v${{ steps.get_version.outputs.version }}
+          
+          ## 📦 Installation
+          
+          ### Option 1: Load Unpacked Extension (Recommended)
+          1. Download `CleanURLs-v${{ steps.get_version.outputs.version }}.zip`
+          2. Extract the zip file
+          3. Open Chrome and go to `chrome://extensions/`
+          4. Enable "Developer mode" (top right toggle)
+          5. Click "Load unpacked" and select the extracted folder
+          
+          ### Option 2: Source Code
+          Download `CleanURLs-source-v${{ steps.get_version.outputs.version }}.zip` if you want to review or modify the source code.
+          
+          ## ✨ Features
+          - 🔒 **Privacy Protection**: Automatically removes tracking parameters
+          - ⚙️ **Customizable Rules**: Configure your own regex patterns
+          - 🔄 **Real-time Cleaning**: Works as you browse
+          - 🎯 **Smart Detection**: Works on both URL parameters and values
+          - 🚀 **Lightweight**: Minimal performance impact
+          - 🌐 **Universal**: Works on all websites
+          
+          ## 🔧 What's New
+          See the [commit history](https://github.com/Cocodrulo/CleanURLS/commits/main) for detailed changes in this version.
+          
+          ---
+          
+          If you find this extension useful, please consider giving it a ⭐ on GitHub!
+        files: |
+          CleanURLs-v${{ steps.get_version.outputs.version }}.zip
+          CleanURLs-source-v${{ steps.get_version.outputs.version }}.zip
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
