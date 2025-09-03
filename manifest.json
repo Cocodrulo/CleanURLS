@@ -1,0 +1,41 @@
+{
+    "manifest_version": 3,
+    "name": "CleanURLs",
+    "version": "1.2.0",
+    "description": "Automatically remove tracking parameters from URLs to protect privacy and clean up links. Configurable regex patterns for custom cleaning rules.",
+    "author": "Cocodrulo",
+    "permissions": ["storage", "scripting", "activeTab"],
+    "host_permissions": ["<all_urls>"],
+    "icons": {
+        "16": "icons/icon16.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+    },
+    "background": {
+        "service_worker": "background.js"
+    },
+    "options_page": "options.html",
+    "content_scripts": [
+        {
+            "matches": ["<all_urls>"],
+            "js": ["content_script.js"],
+            "run_at": "document_start",
+            "all_frames": true
+        }
+    ],
+    "action": {
+        "default_popup": "popup.html",
+        "default_title": "CleanURLs - Configure URL cleaning rules",
+        "default_icon": {
+            "16": "icons/icon16.png",
+            "48": "icons/icon48.png",
+            "128": "icons/icon128.png"
+        }
+    },
+    "web_accessible_resources": [
+        {
+            "resources": ["options.html"],
+            "matches": ["<all_urls>"]
+        }
+    ]
+}
