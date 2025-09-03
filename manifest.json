@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "CleanURLs",
-    "version": "1.2.0",
+    "version": "1.1.0",
     "description": "Automatically remove tracking parameters from URLs to protect privacy and clean up links. Configurable regex patterns for custom cleaning rules.",
     "author": "Cocodrulo",
     "permissions": ["storage", "scripting", "activeTab"],

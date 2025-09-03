@@ -5,6 +5,9 @@ const DEFAULT_RULES = [
 ];
 
 let currentRules = [];
+let settings = {
+    showBadge: true,
+};
 
 // Show toast notification
 function showToast(message, type = "success") {
@@ -155,7 +158,7 @@ function clearAllRules() {
     }
 }
 
-// Save rules
+// Save rules and settings
 function saveRules() {
     // Collect current rules from form
     const patterns = Array.from(document.querySelectorAll(".pattern")).map(
@@ -189,37 +192,81 @@ function saveRules() {
         }))
         .filter((rule) => rule.pattern.length > 0);
 
-    // Save to storage
-    chrome.storage.sync.set({ rules: validRules }, () => {
-        if (chrome.runtime.lastError) {
-            showToast(
-                "Error saving rules: " + chrome.runtime.lastError.message,
-                "error"
-            );
-        } else {
-            currentRules = validRules;
-            renderRules(currentRules);
-            showToast(
-                `Successfully saved ${validRules.length} rule(s)`,
-                "success"
-            );
+    // Save to storage (both rules and settings)
+    chrome.storage.sync.set(
+        {
+            rules: validRules,
+            showBadge: settings.showBadge,
+        },
+        () => {
+            if (chrome.runtime.lastError) {
+                showToast(
+                    "Error saving: " + chrome.runtime.lastError.message,
+                    "error"
+                );
+            } else {
+                currentRules = validRules;
+                renderRules(currentRules);
+                showToast(
+                    `Successfully saved ${validRules.length} rule(s)`,
+                    "success"
+                );
+            }
         }
-    });
+    );
+}
+
+// Toggle badge
+function toggleBadge() {
+    settings.showBadge = !settings.showBadge;
+    updateBadgeToggle();
+
+    // Auto-save when toggling
+    chrome.storage.sync.set(
+        {
+            showBadge: settings.showBadge,
+        },
+        () => {
+            const status = settings.showBadge ? "enabled" : "disabled";
+            showToast(`Badge ${status}`, "success");
+        }
+    );
+}
+
+// Update badge toggle UI
+function updateBadgeToggle() {
+    const toggle = document.getElementById("badge-toggle");
+    if (toggle) {
+        if (settings.showBadge) {
+            toggle.classList.add("active");
+        } else {
+            toggle.classList.remove("active");
+        }
+    }
 }
 
 // Event listeners
 document.addEventListener("DOMContentLoaded", function () {
-    // Load existing rules
-    chrome.storage.sync.get({ rules: [] }, (data) => {
-        currentRules = data.rules || [];
+    // Load existing rules and settings
+    chrome.storage.sync.get(
+        {
+            rules: [],
+            showBadge: true,
+        },
+        (data) => {
+            currentRules = data.rules || [];
+            settings.showBadge =
+                data.showBadge !== undefined ? data.showBadge : true;
 
-        // If no rules exist, show default rules as suggestion
-        if (currentRules.length === 0) {
-            currentRules = [...DEFAULT_RULES];
+            // If no rules exist, show default rules as suggestion
+            if (currentRules.length === 0) {
+                currentRules = [...DEFAULT_RULES];
+            }
+
+            renderRules(currentRules);
+            updateBadgeToggle();
         }
-
-        renderRules(currentRules);
-    });
+    );
 
     // Button event listeners
     document.getElementById("addRule").addEventListener("click", addNewRule);
@@ -230,6 +277,16 @@ document.addEventListener("DOMContentLoaded", function () {
         .getElementById("clearAll")
         .addEventListener("click", clearAllRules);
     document.getElementById("save").addEventListener("click", saveRules);
+
+    // Notification toggle event listener
+    document
+        .getElementById("notifications-toggle")
+        .addEventListener("click", toggleNotifications);
+
+    // Badge toggle event listener
+    document
+        .getElementById("badge-toggle")
+        .addEventListener("click", toggleBadge);
 
     // Keyboard shortcuts
     document.addEventListener("keydown", function (e) {

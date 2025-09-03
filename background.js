@@ -19,28 +19,28 @@ class CleanURLsBackground {
      * Initialize the extension on startup
      */
     async initializeExtension() {
-        console.log("CleanURLs: Background script started");
-
         try {
             // Check if this is the first install
-            const { rules, isFirstInstall } = await chrome.storage.sync.get({
-                rules: [],
-                isFirstInstall: true,
-            });
+            const { rules, isFirstInstall, showBadge } =
+                await chrome.storage.sync.get({
+                    rules: [],
+                    isFirstInstall: true,
+                    showBadge: true,
+                });
 
             // Set default rules on first install
             if (isFirstInstall && rules.length === 0) {
                 await chrome.storage.sync.set({
                     rules: DEFAULT_RULES,
                     isFirstInstall: false,
+                    showBadge: true,
                 });
-                console.log("CleanURLs: Default rules installed");
             }
 
             // Update badge with rule count
-            this.updateBadge(rules.length);
+            this.updateBadge(rules.length, showBadge);
         } catch (error) {
-            console.error("CleanURLs: Initialization error:", error);
+            // Silent error handling
         }
     }
 
@@ -76,8 +76,6 @@ class CleanURLsBackground {
      * Handle extension install/update events
      */
     async handleInstalled(details) {
-        console.log("CleanURLs: Install event:", details.reason);
-
         switch (details.reason) {
             case "install":
                 // Open options page on first install
@@ -89,7 +87,6 @@ class CleanURLsBackground {
             case "update":
                 // Handle updates if needed
                 const currentVersion = chrome.runtime.getManifest().version;
-                console.log(`CleanURLs: Updated to version ${currentVersion}`);
                 break;
         }
     }
@@ -98,28 +95,32 @@ class CleanURLsBackground {
      * Handle storage changes
      */
     async handleStorageChange(changes, namespace) {
-        if (namespace === "sync" && changes.rules) {
-            const newRules = changes.rules.newValue || [];
-            this.updateBadge(newRules.length);
+        if (namespace === "sync" && (changes.rules || changes.showBadge)) {
+            const newRules = changes.rules?.newValue || [];
+            const showBadge = changes.showBadge?.newValue ?? true;
+
+            this.updateBadge(newRules.length, showBadge);
 
             // Notify all content scripts about rule changes
-            try {
-                const tabs = await chrome.tabs.query({});
-                for (const tab of tabs) {
-                    if (
-                        tab.url &&
-                        (tab.url.startsWith("http") ||
-                            tab.url.startsWith("https"))
-                    ) {
-                        chrome.tabs
-                            .sendMessage(tab.id, { action: "reloadConfig" })
-                            .catch(() => {
-                                // Ignore errors for tabs without content script
-                            });
+            if (changes.rules) {
+                try {
+                    const tabs = await chrome.tabs.query({});
+                    for (const tab of tabs) {
+                        if (
+                            tab.url &&
+                            (tab.url.startsWith("http") ||
+                                tab.url.startsWith("https"))
+                        ) {
+                            chrome.tabs
+                                .sendMessage(tab.id, { action: "reloadConfig" })
+                                .catch(() => {
+                                    // Ignore errors for tabs without content script
+                                });
+                        }
                     }
+                } catch (error) {
+                    // Silent error handling
                 }
-            } catch (error) {
-                console.warn("CleanURLs: Error notifying tabs:", error);
             }
         }
     }
@@ -156,10 +157,7 @@ class CleanURLsBackground {
                     files: ["content_script.js"],
                 });
             } catch (injectionError) {
-                console.warn(
-                    "CleanURLs: Failed to inject content script:",
-                    injectionError
-                );
+                // Silent error handling
             }
         }
     }
@@ -182,6 +180,13 @@ class CleanURLsBackground {
                     sendResponse(stats);
                     break;
 
+                case "getCurrentTabStats":
+                    const tabStats = await this.getCurrentTabStats(
+                        request.tabId
+                    );
+                    sendResponse(tabStats);
+                    break;
+
                 case "resetToDefaults":
                     await chrome.storage.sync.set({ rules: DEFAULT_RULES });
                     sendResponse({ success: true });
@@ -198,7 +203,6 @@ class CleanURLsBackground {
                     sendResponse({ error: "Unknown action" });
             }
         } catch (error) {
-            console.error("CleanURLs: Message handling error:", error);
             sendResponse({ error: error.message });
         }
     }
@@ -206,12 +210,16 @@ class CleanURLsBackground {
     /**
      * Update extension badge with rule count
      */
-    updateBadge(ruleCount) {
-        const text = ruleCount > 0 ? ruleCount.toString() : "";
-        const color = ruleCount > 0 ? "#4CAF50" : "#9E9E9E";
+    updateBadge(ruleCount, showBadge = true) {
+        if (showBadge) {
+            const text = ruleCount > 0 ? ruleCount.toString() : "";
+            const color = ruleCount > 0 ? "#4CAF50" : "#9E9E9E";
 
-        chrome.action.setBadgeText({ text });
-        chrome.action.setBadgeBackgroundColor({ color });
+            chrome.action.setBadgeText({ text });
+            chrome.action.setBadgeBackgroundColor({ color });
+        } else {
+            chrome.action.setBadgeText({ text: "" });
+        }
     }
 
     /**
@@ -233,8 +241,23 @@ class CleanURLsBackground {
                 version: chrome.runtime.getManifest().version,
             };
         } catch (error) {
-            console.error("CleanURLs: Stats error:", error);
             return { error: error.message };
+        }
+    }
+
+    /**
+     * Get current tab statistics
+     */
+    async getCurrentTabStats(tabId) {
+        if (!tabId) return { error: "No tab ID provided" };
+
+        try {
+            const response = await chrome.tabs.sendMessage(tabId, {
+                action: "getStats",
+            });
+            return response || { cleanedLinksCount: 0, domain: "unknown" };
+        } catch (error) {
+            return { cleanedLinksCount: 0, domain: "unknown" };
         }
     }
 }
@@ -244,11 +267,9 @@ const cleanURLsBackground = new CleanURLsBackground();
 
 // Handle service worker lifecycle
 self.addEventListener("install", (event) => {
-    console.log("CleanURLs: Service worker installing");
     self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
-    console.log("CleanURLs: Service worker activating");
     event.waitUntil(self.clients.claim());
 });

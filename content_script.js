@@ -1,5 +1,15 @@
 /**
- * CleanURLs Content Script
+ * CleanURLs     async init() {
+        try {
+            await this.loadConfig();
+            await this.handleCurrentLocation();
+            this.cleanAllLinks();
+            this.startObserver();
+            this.isInitialized = true;
+        } catch (error) {
+            // Silent error handling
+        }
+    }pt
  * Monitors and cleans URLs on web pages to remove tracking parameters
  */
 
@@ -9,6 +19,7 @@ class URLCleaner {
         this.isInitialized = false;
         this.observer = null;
         this.processedUrls = new Set();
+        this.cleanedLinksCount = 0;
         this.init();
     }
 
@@ -18,13 +29,13 @@ class URLCleaner {
     async init() {
         try {
             await this.loadConfig();
+            await this.loadSettings();
             await this.handleCurrentLocation();
             this.cleanAllLinks();
             this.startObserver();
             this.isInitialized = true;
-            console.log("CleanURLs: Content script initialized");
         } catch (error) {
-            console.error("CleanURLs: Initialization error:", error);
+            // Silent error handling - no console logs
         }
     }
 
@@ -39,10 +50,6 @@ class URLCleaner {
                     replacement: rule.replacement || "",
                     originalPattern: rule.pattern,
                 }));
-
-                console.log(
-                    `CleanURLs: Loaded ${this.configRules.length} rules`
-                );
                 resolve();
             });
         });
@@ -74,23 +81,14 @@ class URLCleaner {
                             if (rule.replacement === "") {
                                 url.searchParams.delete(key);
                                 hasChanges = true;
-                                console.log(
-                                    `CleanURLs: Removed parameter '${key}' using rule '${rule.originalPattern}'`
-                                );
                             } else {
                                 url.searchParams.set(key, rule.replacement);
                                 hasChanges = true;
-                                console.log(
-                                    `CleanURLs: Replaced parameter '${key}' with '${rule.replacement}' using rule '${rule.originalPattern}'`
-                                );
                             }
                             break; // Stop after first matching rule
                         }
                     } catch (regexError) {
-                        console.warn(
-                            `CleanURLs: Invalid regex pattern '${rule.originalPattern}':`,
-                            regexError
-                        );
+                        // Silent error handling
                     }
                 }
             }
@@ -104,7 +102,6 @@ class URLCleaner {
 
             return cleanedUrl;
         } catch (error) {
-            console.warn("CleanURLs: Error processing URL:", urlStr, error);
             return urlStr;
         }
     }
@@ -130,7 +127,7 @@ class URLCleaner {
         });
 
         if (cleanedCount > 0) {
-            console.log(`CleanURLs: Cleaned ${cleanedCount} links on page`);
+            this.cleanedLinksCount += cleanedCount;
         }
     }
 
@@ -142,7 +139,6 @@ class URLCleaner {
 
         const cleanedUrl = this.cleanUrlString(location.href);
         if (cleanedUrl !== location.href) {
-            console.log("CleanURLs: Redirecting to cleaned URL");
             // Use replace to avoid adding to browser history
             location.replace(cleanedUrl);
         }
@@ -212,6 +208,7 @@ class URLCleaner {
         const cleanedHref = this.cleanUrlString(originalHref);
         if (cleanedHref !== originalHref) {
             anchor.setAttribute("href", cleanedHref);
+            this.cleanedLinksCount++;
         }
     }
 
@@ -221,8 +218,8 @@ class URLCleaner {
     async reloadConfig() {
         await this.loadConfig();
         this.processedUrls.clear();
+        this.cleanedLinksCount = 0;
         this.cleanAllLinks();
-        console.log("CleanURLs: Configuration reloaded");
     }
 
     /**
@@ -233,7 +230,6 @@ class URLCleaner {
             this.observer.disconnect();
         }
         this.processedUrls.clear();
-        console.log("CleanURLs: Content script cleaned up");
     }
 }
 
@@ -258,6 +254,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             sendResponse({
                 rulesCount: urlCleaner.configRules.length,
                 processedUrls: urlCleaner.processedUrls.size,
+                cleanedLinksCount: urlCleaner.cleanedLinksCount,
+                domain: location.hostname,
             });
             break;
     }

@@ -11,6 +11,10 @@ class PopupController {
             activeTabs: 0,
             version: "1.2.0",
         };
+        this.currentTabStats = {
+            cleanedLinksCount: 0,
+            domain: "unknown",
+        };
         this.init();
     }
 
@@ -20,11 +24,11 @@ class PopupController {
     async init() {
         try {
             await this.loadStats();
+            await this.loadCurrentTabStats();
             this.setupEventListeners();
             this.updateUI();
             this.hideLoading();
         } catch (error) {
-            console.error("CleanURLs Popup: Initialization error:", error);
             this.showError("Failed to load extension data");
         }
     }
@@ -39,6 +43,32 @@ class PopupController {
                     this.stats = { ...this.stats, ...response };
                 }
                 resolve();
+            });
+        });
+    }
+
+    /**
+     * Load current tab statistics
+     */
+    async loadCurrentTabStats() {
+        return new Promise((resolve) => {
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                if (tabs[0]?.id) {
+                    chrome.runtime.sendMessage(
+                        {
+                            action: "getCurrentTabStats",
+                            tabId: tabs[0].id,
+                        },
+                        (response) => {
+                            if (response && !response.error) {
+                                this.currentTabStats = response;
+                            }
+                            resolve();
+                        }
+                    );
+                } else {
+                    resolve();
+                }
             });
         });
     }
@@ -84,9 +114,17 @@ class PopupController {
         document.getElementById("rules-count").textContent =
             this.stats.rulesCount || 0;
 
-        // Update active tabs count
+        // Update current website cleaned links count
         document.getElementById("tabs-count").textContent =
-            this.stats.activeTabs || 0;
+            this.currentTabStats.cleanedLinksCount || 0;
+
+        // Update the label for the second stat
+        const tabsLabel = document.querySelector(
+            ".stat-item:nth-child(2) .stat-label"
+        );
+        if (tabsLabel) {
+            tabsLabel.textContent = "Cleaned Links";
+        }
 
         // Update version
         document.getElementById("version").textContent =
@@ -98,14 +136,24 @@ class PopupController {
             statusElement.className = "status active";
             statusElement.innerHTML = `
                 <strong>🟢 Active</strong><br>
-                Protecting your privacy with ${this.stats.rulesCount} rule(s)
-            `;
+                Protecting your privacy with ${this.stats.rulesCount} rule(s)`;
         } else {
             statusElement.className = "status inactive";
             statusElement.innerHTML = `
                 <strong>🟡 No Rules</strong><br>
-                Click "Configure Rules" to set up URL cleaning
-            `;
+                Click "Configure Rules" to set up URL cleaning`;
+        }
+
+        // Show domain info if available
+        if (
+            this.currentTabStats.domain &&
+            this.currentTabStats.domain !== "unknown"
+        ) {
+            const domainInfo = document.getElementById("domain-info");
+            if (domainInfo) {
+                domainInfo.textContent = `on ${this.currentTabStats.domain}`;
+                domainInfo.style.display = "block";
+            }
         }
     }
 
@@ -172,6 +220,10 @@ class PopupController {
 
             await Promise.all(promises);
 
+            // Refresh current tab stats
+            await this.loadCurrentTabStats();
+            this.updateUI();
+
             // Show success feedback
             reloadButton.innerHTML = "✅ Reloaded!";
             setTimeout(() => {
@@ -179,7 +231,6 @@ class PopupController {
                 reloadButton.disabled = false;
             }, 1500);
         } catch (error) {
-            console.error("Error reloading rules:", error);
             reloadButton.innerHTML = "❌ Failed";
             setTimeout(() => {
                 reloadButton.innerHTML = originalText;

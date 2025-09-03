@@ -117,12 +117,21 @@ If you encounter any issues or have suggestions for improvements:
 
 ### v1.2.0 (Latest)
 
+-   Added badge counter toggle option
+-   Implemented minimalistic dark/light mode styling
+-   Added cleaned links counter in popup
+-   Removed unnecessary logging and debugging code
+-   Streamlined extension settings interface
+-   Performance improvements and code cleanup
+
+### v1.1.0
+
 -   Enhanced UI with modern design
 -   Improved rule management
 -   Better error handling
 -   Performance optimizations
 
-### v1.1.0
+### v1.0.1
 
 -   Added custom regex pattern support
 -   Improved options interface
